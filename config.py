@@ -1,12 +1,8 @@
-# ─── CONFIGURATION ───────────────────────────────────────────────────────────
-# Remplace ces valeurs par les tiennes
+import os
 
-TOKEN = "TON_TOKEN_BOT_ICI"          # Token obtenu via @BotFather
-
-PAYPAL_EMAIL = "ton@email.com"        # Ton adresse PayPal
-
-CANAL_NOM = "NOM DE TON CANAL"        # Ex: "MonServeur Premium"
-
-ADMIN1 = "@irk14"
-ADMIN2 = "@ilyan_dugafe"
-ADMIN3 = "@TON_USERNAME"              # Ton propre username Telegram
+TOKEN = os.environ.get("TOKEN")
+PAYPAL_EMAIL = os.environ.get("PAYPAL_EMAIL")
+CANAL_NOM = os.environ.get("CANAL_NOM")
+ADMIN1 = os.environ.get("ADMIN1", "@irk14")
+ADMIN2 = os.environ.get("ADMIN2", "@ilyan_dugafe")
+ADMIN3 = os.environ.get("ADMIN3")
