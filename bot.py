@@ -1,7 +1,6 @@
 import logging
 import os
-from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ChatMemberUpdated
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ChatMemberStatus
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -24,7 +23,9 @@ PAYPAL    = os.environ.get("PAYPAL_EMAIL", "ton@email.com")
 CANAL_NOM = os.environ.get("CANAL_NOM", "Notre Serveur")
 ADMIN1    = os.environ.get("ADMIN1", "@irk14")
 ADMIN2    = os.environ.get("ADMIN2", "@ilyan_dugafe")
-ADMIN3    = os.environ.get("ADMIN3", "@admin")
+
+# IDs des membres ayant déjà reçu le message (anti-doublon)
+membres_accueillis = set()
 
 # ─── TEXTES ──────────────────────────────────────────────────────────────────
 
@@ -41,57 +42,21 @@ def texte_bienvenue(prenom: str) -> str:
         f"• 🔥 Des mises à jour régulières\n"
         f"• 🎁 Des exclusivités pour les membres Premium\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💎 *PREMIUM — seulement 4,99€/mois*\n"
-        f"Accès illimité à tout le contenu exclusif, priorité sur "
-        f"les nouveautés, et bien plus encore.\n\n"
+        f"💎 *PREMIUM — seulement 4,99€ à vie*\n"
+        f"Accès illimité à tout le contenu exclusif, une seule fois !\n\n"
         f"👇 *Que veux-tu faire ?*"
     )
 
 def texte_premium() -> str:
     return (
-        f"💎 *Passer Premium — 4,99€/mois*\n\n"
+        f"💎 *Passer Premium — 4,99€ une seule fois*\n\n"
         f"Tu seras parmi nos membres exclusifs avec accès à tout le contenu !\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📩 *Option 1 — Contacter un admin directement :*\n"
-        f"Envoie un DM à l'un de nos admins, ils t'activeront l'accès :\n\n"
+        f"📩 *Contacte un admin en DM pour activer ton accès :*\n\n"
         f"👤 {ADMIN1}\n"
-        f"👤 {ADMIN2}\n"
-        f"👤 {ADMIN3}\n\n"
+        f"👤 {ADMIN2}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💳 *Option 2 — Payer directement par PayPal :*\n"
-        f"Clique sur le bouton ci-dessous pour les instructions de paiement 👇"
-    )
-
-def texte_paiement(username: str) -> str:
-    return (
-        f"💳 *Paiement direct PayPal*\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 *Montant :* 4,99€ ou 5€\n\n"
-        f"📧 *Adresse PayPal :*\n"
-        f"`{PAYPAL}`\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"📝 *IMPORTANT — Dans le message PayPal, écris EXACTEMENT :*\n\n"
-        f"`{username} — {CANAL_NOM}`\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"✅ *Après le paiement :*\n"
-        f"Contacte un admin pour confirmer et activer ton accès :\n"
-        f"👤 {ADMIN1} • {ADMIN2} • {ADMIN3}\n\n"
-        f"⚡ Activation en moins de 24h !"
-    )
-
-def texte_gratuit() -> str:
-    return (
-        f"🎥 *Contenu gratuit disponible*\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"Tu peux dès maintenant :\n"
-        f"• 📺 Regarder toutes les vidéos déjà postées dans ce canal\n"
-        f"• 📖 Lire les posts publics\n"
-        f"• 💬 Participer aux discussions\n\n"
-        f"Fais défiler vers le haut pour tout voir !\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💡 *Tu veux plus ?*\n"
-        f"Passe Premium pour seulement *4,99€/mois* et accède à "
-        f"tout le contenu exclusif 🚀"
+        f"Dis-leur simplement : *Je veux le Premium* et ils t'expliqueront comment payer 👌"
     )
 
 def texte_question() -> str:
@@ -100,8 +65,7 @@ def texte_question() -> str:
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"Nos admins sont disponibles et répondent rapidement en DM :\n\n"
         f"👤 {ADMIN1}\n"
-        f"👤 {ADMIN2}\n"
-        f"👤 {ADMIN3}\n\n"
+        f"👤 {ADMIN2}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
         f"💬 *N'hésite pas à les contacter pour :*\n"
         f"• Des infos sur le Premium\n"
@@ -110,43 +74,18 @@ def texte_question() -> str:
         f"Ils te répondront dès que possible ! 🙌"
     )
 
-def texte_confirmation_paiement(username: str) -> str:
-    return (
-        f"🎉 *Paiement envoyé ?*\n\n"
-        f"Super ! Maintenant contacte un admin avec ta preuve de paiement :\n\n"
-        f"👤 {ADMIN1}\n"
-        f"👤 {ADMIN2}\n"
-        f"👤 {ADMIN3}\n\n"
-        f"Dis-leur : *J'ai payé le Premium* et montre le reçu PayPal.\n"
-        f"Ton accès sera activé rapidement ✅"
-    )
-
 # ─── KEYBOARDS ───────────────────────────────────────────────────────────────
 
 def kb_principal() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💎 Obtenir le Premium (4,99€)", callback_data="premium")],
+        [InlineKeyboardButton("💎 Obtenir le Premium (4,99€ à vie)", callback_data="premium")],
         [InlineKeyboardButton("🎥 Voir le contenu gratuit", callback_data="gratuit")],
         [InlineKeyboardButton("❓ J'ai une question", callback_data="question")],
     ])
 
 def kb_premium() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💳 Payer directement via PayPal", callback_data="payer")],
-        [InlineKeyboardButton("📩 Contacter un admin", callback_data="question")],
         [InlineKeyboardButton("⬅️ Retour", callback_data="retour")],
-    ])
-
-def kb_paiement() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ J'ai payé, activer mon accès", callback_data="confirmer")],
-        [InlineKeyboardButton("⬅️ Retour", callback_data="premium")],
-    ])
-
-def kb_retour() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💎 Passer Premium", callback_data="premium")],
-        [InlineKeyboardButton("⬅️ Menu principal", callback_data="retour")],
     ])
 
 def kb_retour_simple() -> InlineKeyboardMarkup:
@@ -154,15 +93,63 @@ def kb_retour_simple() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⬅️ Menu principal", callback_data="retour")],
     ])
 
-# ─── HANDLER : CHAT MEMBER (méthode la plus fiable) ──────────────────────────
+# ─── ENVOI DU MESSAGE DE BIENVENUE ───────────────────────────────────────────
+
+async def envoyer_bienvenue(context, chat_id: int, user_id: int, prenom: str, message_id_a_supprimer=None):
+    """
+    Envoie le message de bienvenue uniquement à la personne concernée
+    en utilisant reply_markup avec un message ciblé.
+    Anti-doublon : si déjà accueilli dans cette session, on skip.
+    """
+    if user_id in membres_accueillis:
+        logger.info(f"Anti-doublon : {user_id} déjà accueilli, skip.")
+        return
+
+    membres_accueillis.add(user_id)
+
+    # Supprimer le message système "X a rejoint" si présent
+    if message_id_a_supprimer:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id_a_supprimer)
+        except Exception as e:
+            logger.warning(f"Suppression message système échouée : {e}")
+
+    try:
+        # Envoi en DM d'abord (seule la personne voit)
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=texte_bienvenue(prenom),
+            parse_mode="Markdown",
+            reply_markup=kb_principal()
+        )
+        logger.info(f"Message de bienvenue envoyé en DM à {prenom} ({user_id})")
+    except Exception:
+        # Si DM bloqué, on envoie dans le groupe mais avec un message discret
+        try:
+            msg = await context.bot.send_message(
+                chat_id=chat_id,
+                text=texte_bienvenue(prenom),
+                parse_mode="Markdown",
+                reply_markup=kb_principal()
+            )
+            logger.info(f"Message de bienvenue envoyé dans le groupe pour {prenom} (DM bloqué)")
+            # Épingler
+            try:
+                await context.bot.pin_chat_message(
+                    chat_id=chat_id,
+                    message_id=msg.message_id,
+                    disable_notification=True
+                )
+            except Exception as e:
+                logger.warning(f"Pin échoué : {e}")
+        except Exception as e:
+            logger.error(f"Erreur envoi bienvenue : {e}")
+
+
+# ─── HANDLER : CHAT MEMBER ───────────────────────────────────────────────────
 
 async def track_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Détecte les nouveaux membres via ChatMemberHandler.
-    C'est la méthode la plus fiable pour les supergroupes publics.
-    """
-    result: ChatMemberUpdated = update.chat_member
-
+    result = update.chat_member
     if not result:
         return
 
@@ -170,7 +157,6 @@ async def track_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
     new_status = result.new_chat_member.status
     member = result.new_chat_member.user
 
-    # On vérifie que c'est bien une entrée dans le groupe
     was_member = old_status in [
         ChatMemberStatus.BANNED,
         ChatMemberStatus.LEFT,
@@ -184,82 +170,30 @@ async def track_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not was_member or not is_member:
         return
-
     if member.is_bot:
         return
 
-    logger.info(f"[ChatMember] Nouveau membre détecté : {member.full_name} (@{member.username}) — ID: {member.id}")
-
-    chat_id = result.chat.id
-
-    try:
-        msg = await context.bot.send_message(
-            chat_id=chat_id,
-            text=texte_bienvenue(member.first_name),
-            parse_mode="Markdown",
-            reply_markup=kb_principal()
-        )
-        logger.info(f"Message de bienvenue envoyé (msg_id={msg.message_id})")
-
-        # Épingler
-        try:
-            await context.bot.pin_chat_message(
-                chat_id=chat_id,
-                message_id=msg.message_id,
-                disable_notification=True
-            )
-            logger.info("Message épinglé avec succès")
-        except Exception as e:
-            logger.warning(f"Pin échoué : {e}")
-
-    except Exception as e:
-        logger.error(f"Erreur envoi bienvenue : {e}")
+    logger.info(f"[ChatMember] Nouveau : {member.full_name} ({member.id})")
+    await envoyer_bienvenue(context, result.chat.id, member.id, member.first_name)
 
 
-# ─── HANDLER : NOUVEAU MEMBRE (méthode de secours) ───────────────────────────
+# ─── HANDLER : NOUVEAU MEMBRE (secours) ──────────────────────────────────────
 
 async def nouveau_membre(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Méthode de secours via StatusUpdate.NEW_CHAT_MEMBERS.
-    Double filet pour ne rater aucun membre.
-    """
     if not update.message or not update.message.new_chat_members:
         return
-
-    # Supprimer le message système "X a rejoint"
-    try:
-        await update.message.delete()
-        logger.info("Message système supprimé")
-    except Exception as e:
-        logger.warning(f"Suppression message système échouée : {e}")
 
     for member in update.message.new_chat_members:
         if member.is_bot:
             continue
-
-        logger.info(f"[StatusUpdate] Nouveau membre : {member.full_name} ({member.id})")
-
-        try:
-            msg = await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=texte_bienvenue(member.first_name),
-                parse_mode="Markdown",
-                reply_markup=kb_principal()
-            )
-            logger.info(f"Message de bienvenue envoyé (msg_id={msg.message_id})")
-
-            try:
-                await context.bot.pin_chat_message(
-                    chat_id=update.effective_chat.id,
-                    message_id=msg.message_id,
-                    disable_notification=True
-                )
-                logger.info("Message épinglé")
-            except Exception as e:
-                logger.warning(f"Pin échoué : {e}")
-
-        except Exception as e:
-            logger.error(f"Erreur envoi bienvenue : {e}")
+        logger.info(f"[StatusUpdate] Nouveau : {member.full_name} ({member.id})")
+        await envoyer_bienvenue(
+            context,
+            update.effective_chat.id,
+            member.id,
+            member.first_name,
+            message_id_a_supprimer=update.message.message_id
+        )
 
 
 # ─── HANDLER : BOUTONS ───────────────────────────────────────────────────────
@@ -269,10 +203,9 @@ async def bouton(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     user = query.from_user
-    username = f"@{user.username}" if user.username else user.first_name
     data = query.data
 
-    logger.info(f"Bouton '{data}' cliqué par {username}")
+    logger.info(f"Bouton '{data}' cliqué par {user.first_name} ({user.id})")
 
     try:
         if data == "premium":
@@ -282,26 +215,9 @@ async def bouton(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb_premium()
             )
 
-        elif data == "payer":
-            await query.edit_message_text(
-                texte_paiement(username),
-                parse_mode="Markdown",
-                reply_markup=kb_paiement()
-            )
-
-        elif data == "confirmer":
-            await query.edit_message_text(
-                texte_confirmation_paiement(username),
-                parse_mode="Markdown",
-                reply_markup=kb_retour_simple()
-            )
-
         elif data == "gratuit":
-            await query.edit_message_text(
-                texte_gratuit(),
-                parse_mode="Markdown",
-                reply_markup=kb_retour()
-            )
+            # Ne fait rien de visible, juste un toast discret
+            await query.answer("📺 Fais défiler vers le haut pour voir tout le contenu gratuit !", show_alert=True)
 
         elif data == "question":
             await query.edit_message_text(
@@ -333,27 +249,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ─── COMMANDE /test (admin only) ─────────────────────────────────────────────
+# ─── COMMANDE /test ───────────────────────────────────────────────────────────
 
 async def test(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Commande pour tester le message de bienvenue sans rejoindre."""
     user = update.effective_user
     logger.info(f"/test de {user.full_name} ({user.id})")
-
-    msg = await update.message.reply_text(
-        texte_bienvenue(user.first_name),
-        parse_mode="Markdown",
-        reply_markup=kb_principal()
-    )
-
-    try:
-        await context.bot.pin_chat_message(
-            chat_id=update.effective_chat.id,
-            message_id=msg.message_id,
-            disable_notification=True
-        )
-    except Exception as e:
-        logger.warning(f"Pin /test échoué : {e}")
+    # Reset anti-doublon pour le test
+    membres_accueillis.discard(user.id)
+    await envoyer_bienvenue(context, update.effective_chat.id, user.id, user.first_name)
 
 
 # ─── LANCEMENT ───────────────────────────────────────────────────────────────
@@ -364,20 +267,14 @@ def main():
 
     logger.info("Démarrage du bot...")
     logger.info(f"Canal : {CANAL_NOM}")
-    logger.info(f"PayPal : {PAYPAL}")
-    logger.info(f"Admins : {ADMIN1}, {ADMIN2}, {ADMIN3}")
+    logger.info(f"Admins : {ADMIN1}, {ADMIN2}")
 
     app = Application.builder().token(TOKEN).build()
 
-    # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("test", test))
-
-    # Double détection nouveaux membres
     app.add_handler(ChatMemberHandler(track_chat_member, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, nouveau_membre))
-
-    # Boutons
     app.add_handler(CallbackQueryHandler(bouton))
 
     logger.info("✅ Bot démarré et en écoute !")
