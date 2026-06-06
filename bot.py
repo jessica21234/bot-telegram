@@ -24,22 +24,23 @@ logging.getLogger("telegram.ext").setLevel(logging.WARNING)
 logger = logging.getLogger("BOT")
 
 TOKEN      = os.environ.get("TOKEN", "")
-CHANNEL_ID = os.environ.get("CHANNEL_ID", "")   # ex: @moncanal  OU  -1001234567890
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "").strip()
 CANAL_NOM  = os.environ.get("CANAL_NOM", "Notre Serveur")
 ADMIN1     = os.environ.get("ADMIN1", "@irk14")
 ADMIN2     = os.environ.get("ADMIN2", "@ilyan_dugafe")
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "")  # ex: monbot (sans @)
 
 logger.info("=== VARIABLES CHARGÉES ===")
-logger.info(f"TOKEN      : {'OK' if TOKEN else 'MANQUANT'}")
-logger.info(f"CHANNEL_ID : {CHANNEL_ID if CHANNEL_ID else 'MANQUANT'}")
-logger.info(f"CANAL_NOM  : {CANAL_NOM}")
-logger.info(f"ADMIN1     : {ADMIN1}")
-logger.info(f"ADMIN2     : {ADMIN2}")
+logger.info(f"TOKEN        : {'OK' if TOKEN else 'MANQUANT'}")
+logger.info(f"CHANNEL_ID   : {repr(CHANNEL_ID)}")
+logger.info(f"CANAL_NOM    : {CANAL_NOM}")
+logger.info(f"BOT_USERNAME : {BOT_USERNAME}")
+logger.info(f"ADMIN1       : {ADMIN1}")
+logger.info(f"ADMIN2       : {ADMIN2}")
 logger.info("==========================")
 
 
 def _esc(text: str) -> str:
-    """Échappe les caractères spéciaux pour MarkdownV2."""
     special = r"\_*[]()~`>#+-=|{}.!"
     return "".join(f"\\{c}" if c in special else c for c in text)
 
@@ -63,104 +64,91 @@ def texte_canal() -> str:
 
 
 def kb_canal() -> InlineKeyboardMarkup:
+    # Boutons URL → ouvrent le bot en DM directement, pas de callback
+    admin1_clean = ADMIN1.lstrip("@")
+    admin2_clean = ADMIN2.lstrip("@")
+
+    # Lien vers le bot avec commande start encodée
+    if BOT_USERNAME:
+        premium_url = f"https://t.me/{BOT_USERNAME.lstrip('@')}?start=premium"
+    else:
+        # Fallback : lien direct vers admin1
+        premium_url = f"https://t.me/{admin1_clean}"
+
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("💎 Obtenir le Premium", callback_data="premium")],
-        [InlineKeyboardButton("🎥 Contenu gratuit",    callback_data="gratuit")],
+        [InlineKeyboardButton("💎 Obtenir le Premium", url=premium_url)],
+        [InlineKeyboardButton("🎥 Contenu gratuit", url=f"https://t.me/{CHANNEL_ID.lstrip('@')}")],
     ])
 
 
-def normaliser_channel_id(channel_id: str) -> str | int:
-    """
-    Convertit CHANNEL_ID en int si c'est un ID numérique,
-    sinon s'assure que le username commence bien par @.
-    """
+def normaliser_channel_id(channel_id: str):
     cid = channel_id.strip()
-    # ID numérique (peut commencer par - pour les supergroups/canaux)
     if cid.lstrip("-").isdigit():
         return int(cid)
-    # Username : s'assurer qu'il y a un @
     if not cid.startswith("@"):
         cid = "@" + cid
     return cid
 
 
 async def envoyer_message_canal(bot: Bot):
-    if not CHANNEL_ID:
-        logger.error("CHANNEL_ID vide, abandon.")
+    channel_id = os.environ.get("CHANNEL_ID", "").strip()
+    if not channel_id:
+        logger.error("CHANNEL_ID vide.")
         return
 
-    chat_id = normaliser_channel_id(CHANNEL_ID)
-    logger.info(f"Envoi dans CHANNEL_ID='{chat_id}'")
+    chat_id = normaliser_channel_id(channel_id)
+    logger.info(f"Envoi → {chat_id!r}")
 
     try:
         chat = await bot.get_chat(chat_id)
         logger.info(f"Canal trouvé : {chat.title}")
     except TelegramError as e:
-        logger.error(
-            f"Canal inaccessible : {e}\n"
-            f"  → Vérifie que le bot est ADMIN du canal avec la permission 'Publier des messages'."
-        )
+        logger.error(f"Canal inaccessible : {e}")
         return
 
     try:
         msg = await bot.send_message(
             chat_id=chat_id,
             text=texte_canal(),
-            parse_mode=ParseMode.MARKDOWN_V2,   # MarkdownV2 au lieu de Markdown v1
+            parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=kb_canal(),
         )
         logger.info(f"Message envoyé (id={msg.message_id}) ✅")
         try:
-            await bot.pin_chat_message(
-                chat_id=chat_id,
-                message_id=msg.message_id,
-                disable_notification=True,
-            )
+            await bot.pin_chat_message(chat_id=chat_id, message_id=msg.message_id, disable_notification=True)
             logger.info("Épinglé ✅")
         except TelegramError as e:
-            logger.warning(f"Pin échoué (bot admin avec permission épingle ?) : {e}")
+            logger.warning(f"Pin échoué : {e}")
     except RetryAfter as e:
-        logger.warning(f"Rate-limit, attente {e.retry_after}s...")
         await asyncio.sleep(e.retry_after + 1)
-        await envoyer_message_canal(bot)   # retry
+        await envoyer_message_canal(bot)
     except Forbidden as e:
-        logger.error(
-            f"Accès refusé : {e}\n"
-            f"  → Le bot doit être ADMIN du canal."
-        )
+        logger.error(f"Accès refusé : {e}")
     except TelegramError as e:
         logger.error(f"Erreur envoi : {e}")
 
 
-async def on_bouton(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()   # accusé de réception immédiat (obligatoire)
+# Gestion du /start premium en DM
+async def on_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message:
+        return
 
-    if query.data == "premium":
-        # query.answer() est limité à 200 chars → on envoie le détail en DM
-        try:
-            await context.bot.send_message(
-                chat_id=query.from_user.id,
-                text=(
-                    f"💎 *Accès Premium — 4,99€ à vie*\n\n"
-                    f"Pour finaliser ton accès, contacte un admin en DM :\n\n"
-                    f"👤 {ADMIN1}\n"
-                    f"👤 {ADMIN2}\n\n"
-                    f"Dis\\-leur : « Je veux le Premium » 🙌"
-                ),
-                parse_mode=ParseMode.MARKDOWN_V2,
-            )
-        except Forbidden:
-            # L'utilisateur n'a pas encore démarré le bot en privé
-            await query.answer(
-                f"Contacte {ADMIN1} ou {ADMIN2} en DM pour le Premium (4,99€ à vie) !",
-                show_alert=True,
-            )
-
-    elif query.data == "gratuit":
-        await query.answer(
-            "🎥 Fais défiler vers le haut — tout le contenu gratuit est là !",
-            show_alert=True,
+    args = context.args
+    if args and args[0] == "premium":
+        admin1_clean = ADMIN1.lstrip("@")
+        admin2_clean = ADMIN2.lstrip("@")
+        await update.message.reply_text(
+            f"💎 *Accès Premium — 4,99€ à vie*\n\n"
+            f"Pour finaliser ton accès, contacte un admin :\n\n"
+            f"👤 [{_esc(ADMIN1)}](https://t.me/{admin1_clean})\n"
+            f"👤 [{_esc(ADMIN2)}](https://t.me/{admin2_clean})\n\n"
+            f"Dis\\-leur : « Je veux le Premium » 🙌",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    else:
+        await update.message.reply_text(
+            f"👋 Bienvenue \\! Rejoins notre canal : @{CHANNEL_ID.lstrip('@')}",
+            parse_mode=ParseMode.MARKDOWN_V2,
         )
 
 
@@ -173,6 +161,12 @@ async def on_new_member_message(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def post_init(application: Application):
+    # Récupère le username du bot automatiquement si pas défini
+    global BOT_USERNAME
+    if not BOT_USERNAME:
+        me = await application.bot.get_me()
+        BOT_USERNAME = me.username or ""
+        logger.info(f"BOT_USERNAME auto-détecté : @{BOT_USERNAME}")
     await envoyer_message_canal(application.bot)
 
 
@@ -181,9 +175,7 @@ def main():
         logger.critical("TOKEN manquant !")
         sys.exit(1)
 
-    if not CHANNEL_ID:
-        logger.critical("CHANNEL_ID manquant !")
-        sys.exit(1)
+    from telegram.ext import CommandHandler
 
     app = (
         Application.builder()
@@ -192,10 +184,11 @@ def main():
         .build()
     )
 
+    app.add_handler(CommandHandler("start", on_start))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_member_message))
-    app.add_handler(CallbackQueryHandler(on_bouton))
+    app.add_handler(CallbackQueryHandler(lambda u, c: None))  # ignore callbacks résiduels
 
-    logger.info("Bot démarré, en attente de mises à jour...")
+    logger.info("Bot démarré ✅")
     app.run_polling(
         allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
         drop_pending_updates=True,
