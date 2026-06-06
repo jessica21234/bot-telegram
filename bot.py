@@ -1,6 +1,6 @@
+from config import TOKEN, CANAL_NOM, ADMIN1, ADMIN2, ADMIN3, CHANNEL_ID 
 import asyncio
 import logging
-import os
 import sys
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
