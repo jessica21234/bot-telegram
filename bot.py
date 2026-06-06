@@ -1,6 +1,6 @@
-from config import TOKEN, CANAL_NOM, ADMIN1, ADMIN2, ADMIN3, CHANNEL_ID
 import asyncio
 import logging
+import os
 import sys
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -14,8 +14,6 @@ from telegram.ext import (
     filters,
 )
 
-# ─── LOGGING ─────────────────────────────────────────────────────────────────
-
 logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(message)s",
     level=logging.INFO,
@@ -25,7 +23,20 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("telegram.ext").setLevel(logging.WARNING)
 logger = logging.getLogger("BOT")
 
-# ─── TEXTE & CLAVIER ─────────────────────────────────────────────────────────
+TOKEN      = os.environ.get("TOKEN", "")
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "")
+CANAL_NOM  = os.environ.get("CANAL_NOM", "Notre Serveur")
+ADMIN1     = os.environ.get("ADMIN1", "@irk14")
+ADMIN2     = os.environ.get("ADMIN2", "@ilyan_dugafe")
+
+logger.info("=== VARIABLES CHARGÉES ===")
+logger.info(f"TOKEN      : {'OK' if TOKEN else 'MANQUANT'}")
+logger.info(f"CHANNEL_ID : {CHANNEL_ID if CHANNEL_ID else 'MANQUANT'}")
+logger.info(f"CANAL_NOM  : {CANAL_NOM}")
+logger.info(f"ADMIN1     : {ADMIN1}")
+logger.info(f"ADMIN2     : {ADMIN2}")
+logger.info("==========================")
+
 
 def texte_canal() -> str:
     return (
@@ -43,89 +54,64 @@ def texte_canal() -> str:
         f"👇 *Clique sur un bouton ci-dessous*"
     )
 
+
 def kb_canal() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💎 Obtenir le Premium", callback_data="premium")],
         [InlineKeyboardButton("🎥 Contenu gratuit",    callback_data="gratuit")],
     ])
 
-# ─── ENVOI DU MESSAGE ────────────────────────────────────────────────────────
 
 async def envoyer_message_canal(bot: Bot):
-    logger.info("=" * 50)
-    logger.info("Tentative d'envoi du message dans le canal...")
-    logger.info(f"CHANNEL_ID utilisé : '{CHANNEL_ID}'")
+    logger.info(f"Envoi dans CHANNEL_ID='{CHANNEL_ID}'")
 
     if not CHANNEL_ID:
-        logger.error("CHANNEL_ID est vide !")
+        logger.error("CHANNEL_ID vide, abandon.")
         return
 
     try:
         chat = await bot.get_chat(CHANNEL_ID)
-        logger.info(f"Canal trouvé : {chat.title} (id={chat.id})")
+        logger.info(f"Canal trouvé : {chat.title}")
     except TelegramError as e:
-        logger.error(f"Impossible d'accéder au canal : {e}")
+        logger.error(f"Canal inaccessible : {e}")
         return
 
-    for attempt in range(3):
+    try:
+        msg = await bot.send_message(
+            chat_id=CHANNEL_ID,
+            text=texte_canal(),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=kb_canal(),
+        )
+        logger.info(f"Message envoyé (id={msg.message_id}) ✅")
         try:
-            msg = await bot.send_message(
-                chat_id=CHANNEL_ID,
-                text=texte_canal(),
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=kb_canal(),
-            )
-            logger.info(f"Message envoyé ! (message_id={msg.message_id})")
-
-            try:
-                await bot.pin_chat_message(
-                    chat_id=CHANNEL_ID,
-                    message_id=msg.message_id,
-                    disable_notification=True,
-                )
-                logger.info("Message épinglé ✅")
-            except TelegramError as e:
-                logger.warning(f"Épinglage échoué : {e}")
-
-            logger.info("=" * 50)
-            return
-
-        except RetryAfter as e:
-            await asyncio.sleep(e.retry_after + 1)
-        except Forbidden as e:
-            logger.error(f"Accès refusé : {e}")
-            return
+            await bot.pin_chat_message(chat_id=CHANNEL_ID, message_id=msg.message_id, disable_notification=True)
+            logger.info("Épinglé ✅")
         except TelegramError as e:
-            logger.error(f"Erreur (tentative {attempt+1}/3) : {e}")
-            if attempt < 2:
-                await asyncio.sleep(3)
+            logger.warning(f"Pin échoué : {e}")
+    except RetryAfter as e:
+        await asyncio.sleep(e.retry_after + 1)
+    except Forbidden as e:
+        logger.error(f"Accès refusé (bot admin du canal ?) : {e}")
+    except TelegramError as e:
+        logger.error(f"Erreur envoi : {e}")
 
-    logger.error("Échec après 3 tentatives.")
-
-# ─── BOUTONS ─────────────────────────────────────────────────────────────────
 
 async def on_bouton(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    data  = query.data
-    user  = query.from_user
-
-    logger.info(f"Bouton '{data}' cliqué par {user.first_name} ({user.id})")
-
-    if data == "premium":
+    if query.data == "premium":
         await query.answer(
             f"💎 Pour le Premium (4,99€ à vie), contacte un admin en DM :\n\n"
-            f"{ADMIN1}\n"
-            f"{ADMIN2}\n\n"
+            f"{ADMIN1}\n{ADMIN2}\n\n"
             f"Dis-leur : « Je veux le Premium » 🙌",
             show_alert=True,
         )
-    elif data == "gratuit":
+    elif query.data == "gratuit":
         await query.answer(
-            "🎥 Fais défiler vers le haut — tout le contenu gratuit est déjà là !",
+            "🎥 Fais défiler vers le haut — tout le contenu gratuit est là !",
             show_alert=False,
         )
 
-# ─── SUPPRIME LES MESSAGES "X A REJOINT" ─────────────────────────────────────
 
 async def on_new_member_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message and update.message.new_chat_members:
@@ -134,27 +120,15 @@ async def on_new_member_message(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             pass
 
-# ─── POST_INIT ───────────────────────────────────────────────────────────────
 
 async def post_init(application: Application):
-    logger.info("Bot démarré, envoi du message unique...")
     await envoyer_message_canal(application.bot)
 
-# ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
     if not TOKEN:
         logger.critical("TOKEN manquant !")
         sys.exit(1)
-
-    logger.info("=" * 50)
-    logger.info("DÉMARRAGE DU BOT")
-    logger.info(f"  CANAL_NOM  : {CANAL_NOM}")
-    logger.info(f"  CHANNEL_ID : {CHANNEL_ID if CHANNEL_ID else '⚠️  MANQUANT'}")
-    logger.info(f"  ADMIN1     : {ADMIN1}")
-    logger.info(f"  ADMIN2     : {ADMIN2}")
-    logger.info(f"  TOKEN      : {'✅ présent' if TOKEN else '❌ manquant'}")
-    logger.info("=" * 50)
 
     app = (
         Application.builder()
@@ -166,11 +140,11 @@ def main():
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_new_member_message))
     app.add_handler(CallbackQueryHandler(on_bouton))
 
-    logger.info("Bot en écoute des boutons...")
     app.run_polling(
         allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY],
         drop_pending_updates=True,
     )
+
 
 if __name__ == "__main__":
     main()
